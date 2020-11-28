@@ -6,6 +6,8 @@
 ## Analyze   data     ##
 ########################
 
+##########READ ASSIGNMENT DETAILS FOR DATE AND PER CAPITA
+
 
 # Clear memory and call packages
 rm(list=ls())
@@ -13,7 +15,7 @@ library(tidyverse)
 library(scales)
 
 # Set URL for clean data
-my_url <- "https://raw.githubusercontent.com/joyce-john/DA2_project/main/data/clean/covid_pop_09_11_2020_clean.csv"
+my_url <- "https://raw.githubusercontent.com/joyce-john/DA2_project/main/data/clean/covid_pop_11_10_2020_clean.csv"
 
 # Read the clean data into a dataframe
 df <- read.csv(my_url)
@@ -65,4 +67,4 @@ df <- df %>%
       mutate(log_confirmed = log(confirmed),
              log_death = log(death))
 
-
+#####CONSIDER GRAPHING POLYNOMIAL FUNCTIONS TO VISUALIZE FIT#####

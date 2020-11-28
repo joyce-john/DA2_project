@@ -14,7 +14,7 @@ library(tidyverse)
 # Read the raw files
 my_path <- paste0(getwd(),"/data/")
 # covid data
-cv <- read_csv(paste0(my_path,'raw/covid_09_11_2020_raw.csv'))
+cv <- read_csv(paste0(my_path,'raw/covid_11_10_2020_raw.csv'))
 # population data
 pop <- read_csv(paste0(my_path,'raw/pop_WDI_2019.csv'))
 
@@ -25,7 +25,7 @@ pop <- read_csv(paste0(my_path,'raw/pop_WDI_2019.csv'))
 glimpse( cv )
 
 # Drop not needed variables
-cv <- cv %>% select( -c( FIPS,Admin2,Last_Update,Lat,Long_,Combined_Key,Incidence_Rate,Case.Fatality_Ratio))
+cv <- cv %>% select( -c( FIPS,Admin2,Last_Update,Lat,Long_,Combined_Key,Incident_Rate,Case_Fatality_Ratio))
 
 # One observation to be one country
 # Check e.g. China:
@@ -136,7 +136,7 @@ df <- df %>% filter( !( is.na( population ) | is.na( confirmed ) | is.na( death 
 # Save clean data
 my_path <- paste0(getwd(),"/data/")
 # COVID data
-write_csv( df , paste0(my_path,'clean/covid_pop_09_11_2020_clean.csv'))
+write_csv( df , paste0(my_path,'clean/covid_pop_11_10_2020_clean.csv'))
 
 
 
