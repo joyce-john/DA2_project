@@ -150,7 +150,7 @@ range(df$ln_death_pc_scaled)
 problem_vals <- df %>% 
                 filter(ln_death_pc_scaled <= 0)
 
-# When viewing the data, observe that negative values for ln_death_pc occur when a country...
+# When viewing the data, observe that negative values for ln_death_pc_scaled occur when a country...
 # ...has zero deaths or a very small number of deaths relative to the number of cases.
 # Most of the time, the cases per capita is fairly low, as well.
 view(problem_vals)
@@ -174,13 +174,13 @@ df <- df %>%
 ### simple linear for log log ###
 
 # build the model
-reg1 <- lm_robust(ln_death_pc ~ ln_confirmed_pc, data = df, se_type = "HC2")
+reg1 <- lm_robust(ln_death_pc_scaled ~ ln_confirmed_pc_scaled, data = df, se_type = "HC2")
 
 # view model stats
 summary( reg1 )
 
 # visualize the model
-ggplot(data = df, aes(x = ln_confirmed_pc, y = ln_death_pc)) +
+ggplot(data = df, aes(x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled)) +
   geom_point(color = "blue") +
   geom_smooth(method = lm, color = "red")
 
@@ -189,16 +189,16 @@ ggplot(data = df, aes(x = ln_confirmed_pc, y = ln_death_pc)) +
 
 # create a new column with x^2
 df <- df %>% 
-  mutate(ln_confirmed_pc_sq = ln_confirmed_pc^2)
+  mutate(ln_confirmed_pc_scaled_sq = ln_confirmed_pc_scaled^2)
 
 # build the quadratic model
-reg2 <- lm_robust( ln_death_pc ~ ln_confirmed_pc + ln_confirmed_pc_sq, data = df )
+reg2 <- lm_robust( ln_death_pc_scaled ~ ln_confirmed_pc_scaled + ln_confirmed_pc_scaled_sq, data = df )
 
 # view quadratic model stats
 summary(reg2)
 
 # visualize the model
-ggplot( data = df, aes( x = ln_confirmed_pc, y = ln_death_pc ) ) + 
+ggplot( data = df, aes( x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled ) ) + 
   geom_point( color='blue') +
   geom_smooth( formula = y ~ poly(x,2) , method = lm , color = 'red' )
 
@@ -213,13 +213,13 @@ cutoff <- 20000
 ln_cutoff <- log(cutoff)
 
 # build the model
-reg3 <- lm_robust(ln_death_pc ~ lspline( ln_confirmed_pc , ln_cutoff ), data = df )
+reg3 <- lm_robust(ln_death_pc_scaled ~ lspline( ln_confirmed_pc_scaled , ln_cutoff ), data = df )
 
 # view linear splines stats
 summary(reg3)
 
 # visualize linear splines model
-ggplot( data = df, aes( x = ln_confirmed_pc, y = ln_death_pc ) ) + 
+ggplot( data = df, aes( x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled ) ) + 
   geom_point( color='blue') +
   geom_smooth( formula = y ~ lspline(x,ln_cutoff) , method = lm , color = 'red' )
 
@@ -228,17 +228,17 @@ ggplot( data = df, aes( x = ln_confirmed_pc, y = ln_death_pc ) ) +
 ### weighted linear regression with population weights ###
 
 # build the model, using population as weight
-reg4 <- lm_robust(ln_death_pc ~ ln_confirmed_pc, data = df , weights = population)
+reg4 <- lm_robust(ln_death_pc_scaled ~ ln_confirmed_pc_scaled, data = df , weights = population)
 
 # view model stats
 summary( reg4 )
 
 # visualize the weighted linear regression model
-ggplot(data = df, aes(x = ln_confirmed_pc, y = ln_death_pc)) +
+ggplot(data = df, aes(x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled)) +
   geom_point(data = df, aes(size=population),  color = 'blue', shape = 16, alpha = 0.6,  show.legend=F) +
   geom_smooth(aes(weight = population), method = "lm", color='red')+
   scale_size(range = c(1, 15)) +
-  labs(x = "ln(confirmed cases pc) ",y = "ln(deaths pc)")
+  labs(x = "Confirmed Cases per Million, log scale ",y = "Deaths per Million, log scale")
 
 # Choose  weighted linear regression has the best r squared, and it is easy to interpret.
 
@@ -251,7 +251,7 @@ ggplot(data = df, aes(x = ln_confirmed_pc, y = ln_death_pc)) +
 # Hypothesis testing
 # H0: Beta = 0    HA: Beta != 0
 
-linearHypothesis(reg4, "ln_confirmed_pc = 0")
+linearHypothesis(reg4, "ln_confirmed_pc_scaled = 0")
 
 # With such a small p-value, we will reject the null.
 
@@ -264,17 +264,17 @@ linearHypothesis(reg4, "ln_confirmed_pc = 0")
 # Get the predicted y values from the model
 df$reg4_y_pred <- reg4$fitted.values
 # Calculate the errors of the model
-df$reg4_res <- df$ln_death_pc - df$reg4_y_pred 
+df$reg4_res <- df$ln_death_pc_scaled - df$reg4_y_pred 
 
 
 # Find 5 largest positive errors
 df %>% top_n( 5 , reg4_res ) %>% 
-  select( country , ln_death_pc , reg4_y_pred , reg4_res ) %>% 
+  select( country , ln_death_pc_scaled , reg4_y_pred , reg4_res ) %>% 
   arrange(desc(reg4_res))
 
 # Find the 5 largest negative errors
 df %>% top_n( -5 , reg4_res ) %>% 
-  select( country , ln_death_pc , reg4_y_pred , reg4_res ) %>% 
+  select( country , ln_death_pc_scaled , reg4_y_pred , reg4_res ) %>% 
   arrange(reg4_res)
 
 
