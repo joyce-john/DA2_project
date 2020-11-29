@@ -90,12 +90,12 @@ view(combined_per_capita_stats)
 df %>% 
   ggplot(aes(x = confirmed_pc_scaled)) +
   geom_histogram() +
-  labs(x = "Confirmed Cases per Million")
+  labs(x = "Confirmed Cases per Million", y = "Count of Countries", title = "Distribution of Confirmed Cases per Million")
 
 df %>% 
   ggplot(aes(x = death_pc_scaled)) +
   geom_histogram() +
-  labs(x = "Deaths per Million")
+  labs(x = "Deaths per Million", y = "Count of Countries", title = "Distribution of COVID Deaths per Million")
 
 
 
@@ -182,7 +182,8 @@ summary( reg1 )
 # visualize the model
 ggplot(data = df, aes(x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled)) +
   geom_point(color = "blue") +
-  geom_smooth(method = lm, color = "red")
+  geom_smooth(method = lm, color = "red") +
+  labs(title = "Simple Linear")
 
 
 ### quadratic for log log ###
@@ -200,7 +201,8 @@ summary(reg2)
 # visualize the model
 ggplot( data = df, aes( x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled ) ) + 
   geom_point( color='blue') +
-  geom_smooth( formula = y ~ poly(x,2) , method = lm , color = 'red' )
+  geom_smooth( formula = y ~ poly(x,2) , method = lm , color = 'red' ) +
+  labs(title = "Quadratic Linear")
 
 
 
@@ -221,7 +223,8 @@ summary(reg3)
 # visualize linear splines model
 ggplot( data = df, aes( x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled ) ) + 
   geom_point( color='blue') +
-  geom_smooth( formula = y ~ lspline(x,ln_cutoff) , method = lm , color = 'red' )
+  geom_smooth( formula = y ~ lspline(x,ln_cutoff) , method = lm , color = 'red' ) +
+  labs("Linear Splines")
 
 
 
@@ -238,7 +241,7 @@ ggplot(data = df, aes(x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled)) +
   geom_point(data = df, aes(size=population),  color = 'blue', shape = 16, alpha = 0.6,  show.legend=F) +
   geom_smooth(aes(weight = population), method = "lm", color='red')+
   scale_size(range = c(1, 15)) +
-  labs(x = "Confirmed Cases per Million, log scale ",y = "Deaths per Million, log scale")
+  labs(x = "Confirmed Cases per Million, log scale ",y = "Deaths per Million, log scale", title = "Weighted Linear")
 
 # Choose  weighted linear regression has the best r squared, and it is easy to interpret.
 
@@ -276,11 +279,4 @@ df %>% top_n( 5 , reg4_res ) %>%
 df %>% top_n( -5 , reg4_res ) %>% 
   select( country , ln_death_pc_scaled , reg4_y_pred , reg4_res ) %>% 
   arrange(reg4_res)
-
-
-
-
-
-
-
 

@@ -1,19 +1,307 @@
 ---
 title: "COVID Cases and Deaths Regression"
-author: "John Joyce"
+author: "John Joyce - CEU ID: 2001928"
 date: "11/29/2020"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
+
+# Clear memory and call packages
+rm(list=ls())
+library(knitr)
+library(tidyverse)
+library(scales)
+library(lspline)
+library(estimatr)
+library(car)
+library(gridExtra)
+library(ggthemes)
+library(texreg)
+```
+### Introduction  
+This report analyzes COVID-19 data and seeks to answer the following research question: is there a pattern of association between **confirmed  cases per capita** and **deaths due to COVID per capita**?  
+  
+COVID data is provided  by Johns Hopkins University ([source](https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_daily_reports)) and population data comes from the World Bank's *World Development Indicators*, which can be accessed through the **WDI** R package. This report focuses on the variables **country**, **population**, **confirmed COVID cases**, and **deaths due to COVID**. The data covers the population of interest (the whole world) but there may potential data quality issues: governments may test their citizens differently and may not report their data accurately. The analysis derives **confirmed cases per million** as an explanatory variable and **deaths per million** as a dependent variable for the models.
+
+### Data Exploration  
+The distribution of all variables is examined with histograms (appendix item 1), and some extreme values on the right are examined more closely. A quick look at some of the values on the right reveals that they are not errors. (This check is done on all variables, but only one is shown in this report as an example.) No observations are dropped at this stage.
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+# Set URL for clean data
+my_url <- "https://raw.githubusercontent.com/joyce-john/DA2_project/main/data/clean/covid_pop_11_10_2020_clean.csv"
+
+# Read the clean data into a dataframe
+df <- read.csv(my_url)
+
+# Delete the URL variable
+rm(my_url)
+
+# Histograms of all variables - shown in appendix
+all_vars <-
+df %>%
+  keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+  facet_wrap(~key, scales = "free") +
+  geom_histogram()
 ```
 
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+df %>% arrange(desc(confirmed)) %>% head(3) %>% kable()
+```
+  
+Variables which represent cases and deaths per capita are created and visualized. To make these variables easier to interpret, both are scaled to represent cases/deaths per million people in the population. The two variables have similar distributions which resemble a power-law distribution: strongly skewed to the left side and with a long right tail. The range of observed values is enormous, with deaths per million as low as zero.
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# Create per_capita variables in the data. Scale to confirmed cases/deaths per one million.
+df <- df %>% 
+      mutate(confirmed_pc_scaled = confirmed/population * 1000000,
+             death_pc_scaled = death/population * 1000000)
+
+
+# Check and report distributions of x (registered cases per capita) and y (deaths per capita) 
+# in several steps below
+
+# Get statistics for confirmed cases per capita
+confirmed_pc_scaled_stats <- df %>% 
+                              select(confirmed_pc_scaled) %>% 
+                              summarize(variable = "Confirmed Cases per Million",
+                                        mean = mean(confirmed_pc_scaled),
+                                        median = median(confirmed_pc_scaled),
+                                        min = min(confirmed_pc_scaled),
+                                        max = max(confirmed_pc_scaled),
+                                        std_dev = sd(confirmed_pc_scaled))
+
+# Get statistics for deaths per capita
+death_pc_scaled_stats <- df %>% 
+                           select(death_pc_scaled) %>% 
+                           summarize(variable = "Deaths per Million",
+                                     mean = mean(death_pc_scaled),
+                                     median = median(death_pc_scaled),
+                                     min = min(death_pc_scaled),
+                                     max = max(death_pc_scaled),
+                                     std_dev = sd(death_pc_scaled))
+
+# Create one combined table for confirmed cases per capita and deaths per capita
+combined_per_capita_stats <- rbind(confirmed_pc_scaled_stats, death_pc_scaled_stats)
+
+# Remove unneeded individual stat tables
+rm(confirmed_pc_scaled_stats, death_pc_scaled_stats)
+
+# View the stats
+kable(combined_per_capita_stats)
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 4, fig.height = 4}
+# Vizualize distributions for confirmed cases per million and deaths per million with histograms
+confirmed_hist <- 
+  df %>% 
+  ggplot(aes(x = confirmed_pc_scaled)) +
+  geom_histogram() +
+  labs(x = "Confirmed Cases per Million", y = "Count of Countries", title = "Cases Distribution") + 
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 8))
+
+death_hist <- 
+  df %>% 
+  ggplot(aes(x = death_pc_scaled)) +
+  geom_histogram() +
+  labs(x = "Deaths per Million", y = "Count of Countries", title = "Deaths Distribution") + 
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size = 8))
+  
+# Arrange the plots side-by-side for the report
+grid.arrange(confirmed_hist, death_hist, ncol = 2)
+```
+  
+Both variables are transformed with a log transformation, dropping some values. Substantive reasoning: the variables are affected in multiplicative ways. For example, the maximum value of **confirmed cases per million** is approximately 1800x the minimum value. Statistical reasoning: linear regression will do a better job at estimating the average differences if the dependent variable is normally distributed. Also, when we examine the visualization of the log-log distribution, we can see that it will fit a simple linear regression more easily than any other transformation. (See appendix item 2.)
+
+### Model Creation and Evaluation
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# Mutate dataframe to include logs
+df <- df %>% 
+  mutate(ln_confirmed_pc_scaled = log(confirmed_pc_scaled),
+         ln_death_pc_scaled = log(death_pc_scaled))
+
+# Examine the new columns for problematic values - commented out for report
+# range(df$ln_confirmed_pc_scaled)
+# range(df$ln_death_pc_scaled)
+
+# ln_death_pc_scaled has values below zero. Why? Filter them into their own DF and take a look.
+problem_vals <- df %>% 
+                filter(ln_death_pc_scaled <= 0)
+
+# Inspect these values - commented out for the report
+# view(problem_vals)
+
+# When building the linear models, negative ln values must be excluded.
+# The negative ln values are due to zero or a small number of deaths.
+
+# Filter out values which cause problems for building the models
+df <- df %>% 
+      filter(ln_death_pc_scaled > 0)
+
+
+### simple linear ###
+
+# build the model
+reg1 <- lm_robust(ln_death_pc_scaled ~ ln_confirmed_pc_scaled, data = df, se_type = "HC2")
+
+
+
+### quadratic ###
+
+# create a new column with x^2
+df <- df %>% 
+  mutate(ln_confirmed_pc_scaled_sq = ln_confirmed_pc_scaled^2)
+
+# build the quadratic model
+reg2 <- lm_robust( ln_death_pc_scaled ~ ln_confirmed_pc_scaled + ln_confirmed_pc_scaled_sq, data = df )
 
 
 
 
+### linear splines ###
+
+# set the knot cutoff, thinking in terms of actual values
+cutoff <- 20000
+
+# take the log of the knot cutoff 
+ln_cutoff <- log(cutoff)
+
+# build the model
+reg3 <- lm_robust(ln_death_pc_scaled ~ lspline( ln_confirmed_pc_scaled , ln_cutoff ), data = df )
 
 
 
 
+### weighted linear regression with population weights ###
+
+# build the model, using population as weight
+reg4 <- lm_robust(ln_death_pc_scaled ~ ln_confirmed_pc_scaled, data = df , weights = population)
+
+htmlreg( list(reg1 , reg2 , reg3 , reg4),
+         type = 'html',
+         custom.model.names = c("Simple Linear","Quadratic Linear","Linear Splines","Population Weighted Linear"),
+         caption = 'Linear Regression Models for Deaths per Million ~ Confirmed Cases per Million',
+         file = paste0( getwd() ,'model_comparison.html'), include.ci = FALSE)
+
+```
+
+This report explores four different models: simple linear regression, quadratic linear regression, linear splines, and weighted linear regression (using population as weights). The first three models all have  similar R-Squared values of approximately 0.8. There are no dramatic differences in fit among the first three models - in fact, the simple linear model and the spline model are extremely similar based on their slopes and intercepts. There are no general changes in slope for splines to adapt to. Therefore, the more complicated quadratic and spline models do not offer any advantages which justify their use. The weighted linear regression stands out as a model with a higher R-Squared of approximately 0.9. The regression captures more of the variation in y than the other models. (See appendix item 3 for scatterplots.) The weighted linear regression is selected as the preferred model. (See appendix item 4.)
+  
+The formula is ln_death_pc_scaled = alpha + beta * ln_confirmed_pc_scaled, weights: population
+
+The intercept is -2.6498, which indicates that the natural log of **deaths per million** is -2.6498 on average when the natural log of **cases per million** is 0. This is meaningless. The beta parameter is 0.8591, and it is easy to interpret: on average, observed values of **deaths per million** are 0.8591% higher for every 1% higher **cases per million**.
+
+### Hypothesis Testing on Beta
+A hypothesis test is conducted to determine whether there is a significant linear relationship between **confirmed cases per million** (x) and **deaths per million** (y). The null hypothesis is that the beta parameter is equal to 0, and the alternative hypothesis is that it is not equal to zero. If the p-value is less than 0.05, we will reject the null hypothesis. 
+```{r, echo = TRUE, warning = FALSE, message = FALSE}
+linearHypothesis(reg4, "ln_confirmed_pc_scaled = 0") %>% kable(digits = 50)
+```  
+The table shows that the p-value is much less than 0.05, therefore we can confidently reject the null. There is significant linear relationship between the two variables.
+### Analysis of the Residuals
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# Get the predicted y values from the model
+df$reg4_y_pred <- reg4$fitted.values
+# Calculate the errors of the model
+df$reg4_res <- df$ln_death_pc_scaled - df$reg4_y_pred 
+```
+The countries with the largest positive errors are Yemen, Mexico, Ecuador, Bolivia, and Iran. The points which represent these countries are above the regression line. These countries performed poorly - they experienced more deaths per million relative to their cases per million than average.
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# Find 5 largest positive errors
+df %>% top_n( 5 , reg4_res ) %>% 
+  select( country , ln_death_pc_scaled , reg4_y_pred , reg4_res ) %>% 
+  arrange(desc(reg4_res)) %>% 
+  kable()
+```
+The countries with the largest negative errors are Singapore, Sri Lanka, Qatar, Botswana, and the United Arab Emirates. The points which represent these countries are below the regression line. These countries performed well - they experienced fewer deaths per million relative to their cases per million than average.
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# Find the 5 largest negative errors
+df %>% top_n( -5 , reg4_res ) %>% 
+  select( country , ln_death_pc_scaled , reg4_y_pred , reg4_res ) %>% 
+  arrange(reg4_res) %>% 
+  kable()
+```
+### Executive Summary  
+  
+This report found a strong pattern of association between **confirmed cases per capita** and **deaths due to COVID per capita** (using scaled **per million** variables). The **weighted linear regression** model had an R-Squared of approximately 0.9 - the great majority of variation in **deaths due to COVID per capita** could be explained by regression with **confirmed cases per capita**. The results could be weakened by the revelation that some of the data was low-quality (for example, governments fabricated case numbers). The results could be strengthened by adding additional data (for example, updated numbers several months after the release of the vaccine).  
+\newpage
+
+### Appendix
+
+#### Item 1 - Distribution of All Variables During Initial Exploration  
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.align="center", fig.width=6, fig.height=5}
+all_vars
+```
+  
+#### Item 2 - Variable Transformations  
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.height=3, fig.width=3, fig.align="center"}
+# level-level
+ggplot( df , aes(x = confirmed_pc_scaled, y = death_pc_scaled)) +
+  geom_point() +
+  geom_smooth(method="loess")+
+  labs(x = "confirmed_pc_scaled (level) )",y = "death_pc_scaled (level)", title = "level x - level y")
+
+# log x - level y
+ggplot( df , aes(x = confirmed_pc_scaled, y = death_pc_scaled)) +
+  geom_point() +
+  geom_smooth(method="loess")+
+  labs(x = "confirmed_pc_scaled (log) )",y = "death_pc_scaled (level)", title = "log x - level y") + 
+  scale_x_continuous( trans = log_trans(),  breaks = c(1,2,5,10,20,50,100,200,500,1000,10000) )
+
+# level x - log y
+ggplot( df , aes(x = confirmed_pc_scaled, y = death_pc_scaled)) +
+  geom_point() +
+  geom_smooth(method="loess")+
+  labs(x = "confirmed_pc_scaled (level) )",y = "death_pc_scaled (log)", title = "level x - log y") + 
+  scale_y_continuous( trans = log_trans(),  breaks = c(1,2,5,10,20,50,100,200,500,1000,10000) )
+
+# log x - log y
+ggplot( df , aes(x = confirmed_pc_scaled, y = death_pc_scaled )) +
+  geom_point() +
+  geom_smooth(method="loess")+
+  labs(x = "confirmed_pc_scaled (log) )",y = "death_pc_scaled (log)", title = "log x - log y") + 
+  scale_x_continuous( trans = log_trans(),  breaks = c(1,2,5,10,20,50,100,200,500,1000,10000) )+
+  scale_y_continuous( trans = log_trans() )
+
+```
+
+#### Item 3 - Model Scatterplots
+  
+```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.height=3, fig.width=3, fig.align="center"}
+#simple linear
+ggplot(data = df, aes(x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = lm, color = "red") +
+  labs(title = "Simple Linear")
+
+#quadratic
+ggplot( data = df, aes( x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled ) ) + 
+  geom_point( color='blue') +
+  geom_smooth( formula = y ~ poly(x,2) , method = lm , color = 'red' ) +
+  labs(title = "Quadratic Linear")
+
+#linear splines
+ggplot( data = df, aes( x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled ) ) + 
+  geom_point( color='blue') +
+  geom_smooth( formula = y ~ lspline(x,ln_cutoff) , method = lm , color = 'red' ) +
+  labs(title = "Linear Splines")
+
+#weighted linear
+ggplot(data = df, aes(x = ln_confirmed_pc_scaled, y = ln_death_pc_scaled)) +
+  geom_point(data = df, aes(size=population),  color = 'blue', shape = 16, alpha = 0.6,  show.legend=F) +
+  geom_smooth(aes(weight = population), method = "lm", color='red')+
+  scale_size(range = c(1, 15)) +
+  labs(x = "Confirmed Cases per Million, log scale ",y = "Deaths per Million, log scale", title = "Weighted Linear")
+
+```
+
+#### Item 4 - Why weighted linear regression?  
+  
+Visual inspection of the scatterplot for the weighted linear regression model makes it clear that the model captures the pattern fairly well. It has the highest R-Squared value of any model tested. Additionally, is easy to interpret the coefficients mathematically, and easy to interpret the trend visually. 
